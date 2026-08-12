@@ -1,0 +1,8 @@
+{
+  "snort_catches_ml_misses": 1,
+  "ml_catches_snort_misses": 98,
+  "snort_fp_ml_clean": 0,
+  "ml_fp_snort_clean": 7,
+  "c1_signature_override": 2,
+  "c2_anomaly_watch": 28
+}

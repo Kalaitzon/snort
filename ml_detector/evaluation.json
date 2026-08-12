@@ -1,0 +1,189 @@
+{
+  "test_set_size": 446,
+  "test_attacks": 52,
+  "comparison": {
+    "Snort-only": {
+      "tp": 18,
+      "fp": 0,
+      "fn": 34,
+      "tn": 394,
+      "precision": 1.0,
+      "recall": 0.346,
+      "f1": 0.514,
+      "fpr": 0.0
+    },
+    "ML-only (RF)": {
+      "tp": 49,
+      "fp": 6,
+      "fn": 3,
+      "tn": 388,
+      "precision": 0.891,
+      "recall": 0.942,
+      "f1": 0.916,
+      "fpr": 0.015
+    },
+    "LogReg": {
+      "tp": 48,
+      "fp": 21,
+      "fn": 4,
+      "tn": 373,
+      "precision": 0.696,
+      "recall": 0.923,
+      "f1": 0.793,
+      "fpr": 0.053
+    },
+    "IsolationForest": {
+      "tp": 46,
+      "fp": 70,
+      "fn": 6,
+      "tn": 324,
+      "precision": 0.397,
+      "recall": 0.885,
+      "f1": 0.548,
+      "fpr": 0.178
+    },
+    "Hybrid": {
+      "tp": 50,
+      "fp": 6,
+      "fn": 2,
+      "tn": 388,
+      "precision": 0.893,
+      "recall": 0.962,
+      "f1": 0.926,
+      "fpr": 0.015
+    }
+  },
+  "alert_volume_full_timeline": {
+    "snort_only": 74,
+    "ml_only": 178,
+    "hybrid": 179,
+    "total_windows": 1484
+  },
+  "case_studies": {
+    "ml_catches_snort_misses": [
+      {
+        "window_id": 151,
+        "attack_type": "SYN_SCAN",
+        "packet_count": 130,
+        "syn_count": 67,
+        "psh_count": 4,
+        "icmp_count": 0,
+        "unique_dst_ports": 122,
+        "iat_mean": 0.0075,
+        "snort_only": 0,
+        "ml_only": 1,
+        "rf_score": 0.9772464050621156,
+        "if_score": 0.9132144002244026,
+        "risk_level": "MEDIUM"
+      },
+      {
+        "window_id": 152,
+        "attack_type": "SYN_SCAN",
+        "packet_count": 156,
+        "syn_count": 84,
+        "psh_count": 3,
+        "icmp_count": 0,
+        "unique_dst_ports": 149,
+        "iat_mean": 0.0064,
+        "snort_only": 0,
+        "ml_only": 1,
+        "rf_score": 1.0,
+        "if_score": 0.9158604382668674,
+        "risk_level": "MEDIUM"
+      },
+      {
+        "window_id": 153,
+        "attack_type": "SYN_SCAN",
+        "packet_count": 157,
+        "syn_count": 84,
+        "psh_count": 4,
+        "icmp_count": 0,
+        "unique_dst_ports": 149,
+        "iat_mean": 0.0063,
+        "snort_only": 0,
+        "ml_only": 1,
+        "rf_score": 0.9982603627584204,
+        "if_score": 0.9152884851312738,
+        "risk_level": "MEDIUM"
+      }
+    ],
+    "snort_catches_ml_misses": [
+      {
+        "window_id": 1428,
+        "attack_type": "STEALTH_WEB",
+        "packet_count": 86,
+        "syn_count": 10,
+        "psh_count": 28,
+        "icmp_count": 0,
+        "unique_dst_ports": 11,
+        "iat_mean": 0.0099,
+        "snort_only": 1,
+        "ml_only": 0,
+        "rf_score": 0.1225494873327287,
+        "if_score": 0.9294397455920632,
+        "risk_level": "HIGH"
+      }
+    ],
+    "ml_false_positive_snort_clean": [
+      {
+        "window_id": 692,
+        "attack_type": "BENIGN",
+        "packet_count": 16,
+        "syn_count": 2,
+        "psh_count": 4,
+        "icmp_count": 0,
+        "unique_dst_ports": 3,
+        "iat_mean": 0.0435,
+        "snort_only": 0,
+        "ml_only": 1,
+        "rf_score": 0.5049470414789687,
+        "if_score": 0.6116103805021861,
+        "risk_level": "LOW"
+      },
+      {
+        "window_id": 857,
+        "attack_type": "BENIGN",
+        "packet_count": 1,
+        "syn_count": 1,
+        "psh_count": 0,
+        "icmp_count": 0,
+        "unique_dst_ports": 1,
+        "iat_mean": 1.0,
+        "snort_only": 0,
+        "ml_only": 1,
+        "rf_score": 0.9081349030783532,
+        "if_score": 0.7064778804196928,
+        "risk_level": "MEDIUM"
+      },
+      {
+        "window_id": 1311,
+        "attack_type": "BENIGN",
+        "packet_count": 6,
+        "syn_count": 1,
+        "psh_count": 2,
+        "icmp_count": 0,
+        "unique_dst_ports": 2,
+        "iat_mean": 0.006,
+        "snort_only": 0,
+        "ml_only": 1,
+        "rf_score": 0.6117656602477697,
+        "if_score": 0.2251192757915781,
+        "risk_level": "LOW"
+      }
+    ]
+  },
+  "feedback_loop": {
+    "fp_budget": 0.02,
+    "chosen_threshold": 0.41000000000000003,
+    "metrics_at_threshold": {
+      "tp": 48,
+      "fp": 4,
+      "fn": 4,
+      "tn": 390,
+      "precision": 0.923,
+      "recall": 0.923,
+      "f1": 0.923,
+      "fpr": 0.01
+    }
+  }
+}

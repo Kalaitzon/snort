@@ -1,0 +1,19 @@
+attack_type,start_time,end_time,description
+SYN_SCAN,151.22,154.22,250 SYN packets to many ports
+HTTP_ATTACK,252.798,256.909,15 suspicious HTTP requests (sqlmap UA)
+ICMP_FLOOD,303.289,306.295,501 ICMP echo requests (flood)
+SLOW_ATTACK,380,505.036,11 low-and-slow SQLi attempts
+CONN_FLOOD,453.321,456.321,75 rapid TCP connections (burst)
+STEALTH_WEB,550,622.415,17 stealthy single web probes
+SYN_SCAN,601.16,604.16,250 SYN packets to many ports
+HTTP_ATTACK,702.137,706.364,16 suspicious HTTP requests (sqlmap UA)
+ICMP_FLOOD,801.126,804.132,501 ICMP echo requests (flood)
+CONN_FLOOD,953.617,956.657,76 rapid TCP connections (burst)
+SLOW_ATTACK,1000,1129.534,12 low-and-slow SQLi attempts
+SYN_SCAN,1104.054,1107.054,250 SYN packets to many ports
+HTTP_ATTACK,1203.062,1207.126,15 suspicious HTTP requests (sqlmap UA)
+ICMP_FLOOD,1300.547,1303.547,500 ICMP echo requests (flood)
+STEALTH_WEB,1400,1470.409,17 stealthy single web probes
+SYN_SCAN,1504.2,1507.2,250 SYN packets to many ports
+CONN_FLOOD,1604.275,1607.315,76 rapid TCP connections (burst)
+HTTP_ATTACK,1652.071,1656.324,15 suspicious HTTP requests (sqlmap UA)
