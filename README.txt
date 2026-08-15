@@ -1,168 +1,135 @@
-==============================================================================
- Hybrid IDS (Snort + ML) - Καλαϊτζιδης Ιωαννης, MTE25012
-==============================================================================
+# Hybrid IDS (Snort + Machine Learning)
 
-Το project υλοποιει ενα υβριδικο συστημα ανιχνευσης εισβολων που συνδυαζει
-signature-based ανιχνευση (Snort) με ανιχνευση βασισμενη σε μηχανικη μαθηση
-(Random Forest, Logistic Regression, Isolation Forest), τα ενωνει με ενα επιπεδο
-fusion με βαθμιδες κινδυνου και ρητο χειρισμο διαφωνιων, και τα αξιολογει τιμια
-πανω σε ενα ρεαλιστικο, χρονοσφραγισμενο dataset 1.484 παραθυρων.
+A reproducible **hybrid Intrusion Detection System** that combines signature-based
+detection (**Snort**) with machine-learning anomaly detection (**Random Forest,
+Logistic Regression, Isolation Forest**), fuses the two into a single risk-based
+decision layer with explicit conflict handling, and evaluates everything **honestly**
+on a realistic, time-stamped dataset of 1,484 one-second windows.
 
-Η πληρης τεκμηριωση (μοντελο, μεθοδολογια, αποτελεσματα, evasion, ορια εγκυροτητας)
-δινεται ξεχωριστα στο Report. Το README δειχνει τι κανει το καθε αρχειο, πως
-αντιστοιχουν τα αρχεια στα ζητουμενα, και πως ακριβως τρεχει το καθετι.
+## Core design principle (honesty / no data leakage)
 
-ΚΕΝΤΡΙΚΗ ΣΧΕΔΙΑΣΤΙΚΗ ΑΡΧΗ (τιμιοτητα / αποφυγη leakage):
-Τα labels των παραθυρων προερχονται απο ανεξαρτητο ground truth (χρονοσφραγιδες στο
-event_log.csv και ταυτοτητα επιτιθεμενου), ΟΧΙ απο τα ιδια τα χαρακτηριστικα της
-κινησης. Ετσι αποφευγεται το circular labeling και οι μετρικες ειναι πραγματικες
-(π.χ. Hybrid F1=0.926, οχι τεχνητο 1.0).
+Window labels come from **independent ground truth** (attack timestamps in
+`event_log.csv` and the attacker's identity), **not** from the traffic features
+themselves. This avoids circular labeling and makes the metrics real
+(e.g. Hybrid F1 = 0.926, not an artificial 1.0).
 
+## Repository structure
 
-------------------------------------------------------------------------------
- 1. ΔΟΜΗ ΦΑΚΕΛΩΝ
+```
+.
+├── traffic_generation/
+│   ├── build_dataset.py      # deterministic pcap + event_log synthesis (tasks 1,2)
+│   ├── traffic_gen.py        # live generator for a real lab (reproducibility)
+│   └── web_server.py         # simple victim server for live mode
+├── ml_detector/
+│   ├── feature_extraction.py # per-window features + labels from event_log (tasks 2,4)
+│   ├── snort_emulator.py     # faithful emulator of the Snort rules (task 3)
+│   ├── train_model.py        # RF + LogReg + Isolation Forest, held-out split (task 4)
+│   ├── hybrid_fusion.py      # fusion + risk levels + conflict handling (task 5)
+│   ├── evaluation.py         # metrics, confusion, PR curves, case studies (task 6)
+│   ├── *.csv, *.json, *.pkl  # generated artifacts
+├── rules/
+│   ├── local.rules           # 5 valid Snort 3 rules (task 3)
+│   ├── snort.lua             # Snort 3 config for offline analysis
+│   ├── rules_kali.rules      # rules that ran on real Snort 3.12 (Kali)
+│   └── snort_kali.lua        # config that ran on real Snort 3.12 (Kali)
+├── logs/
+│   ├── event_log.csv         # ground truth: attack timeline
+│   ├── snort_alerts.csv      # per-packet alerts (from the emulator)
+│   ├── snort_windows.csv     # per-window Snort signal
+│   └── alert_fast.txt        # alerts from the REAL Snort 3.12 (Kali)
+├── pcaps/
+│   └── lab_traffic.pcap      # the single traffic dataset
+├── screenshots/              # real Snort execution screenshots (task 3)
+├── README.md
+├── SNORT_GUIDE.md            # how to run the real Snort on Kali (screenshots)
+├── TESTBED_DESIGN.md         # topology, labeling, dataset (task 1)
+├── CASE_STUDIES.md           # 3 signature-vs-anomaly disagreement cases (task 6)
+├── requirements.txt
+└── run_all.sh                # runs the whole pipeline in order
+```
 
-    MTE25012_Snort/                     <- ριζα του project
-    |
-    +-- traffic_generation/
-    |     build_dataset.py       συνθεση ντετερμινιστικου pcap + event_log (task 1,2)
-    |     traffic_gen.py         live γεννητορας για πραγματικο lab (αναπαραγωγιμοτητα)
-    |     web_server.py          απλος server-θυμα για το live mode
-    |
-    +-- ml_detector/
-    |     feature_extraction.py  features ανα παραθυρο + labels απο event_log (task 2,4)
-    |     snort_emulator.py      πιστος emulator των κανονων Snort (task 3)
-    |     train_model.py         RF + LogReg + IsolationForest, held-out (task 4, προαιρ.)
-    |     hybrid_fusion.py       fusion + βαθμιδες + conflict handling (task 5)
-    |     evaluation.py          μετρικες, confusion, PR curves, case studies (task 6, προαιρ.)
-    |     features.csv, predictions.csv, hybrid_results.csv   (παραγονται)
-    |     ml_metrics.json, evaluation.json, conflicts.json    (παραγονται)
-    |     rf_model.pkl, scaler.pkl, iforest.pkl               (παραγονται)
-    |
-    +-- rules/
-    |     local.rules            5 εγκυροι Snort 3 κανονες (task 3)
-    |     snort.lua              config Snort 3 για offline analysis (task 3)
-    |     rules_kali.rules       κανονες συμβατοι με Snort 3.12 (πραγματικη εκτελεση σε Kali)
-    |     snort_kali.lua         config συμβατο με Snort 3.12 (πραγματικη εκτελεση σε Kali)
-    |
-    +-- logs/
-    |     event_log.csv          ground truth: χρονοδιαγραμμα επιθεσεων
-    |     snort_alerts.csv       alerts ανα πακετο (απο τον emulator)
-    |     snort_windows.csv      σημα Snort ανα παραθυρο
-    |     alert_fast.txt         alerts απο τον ΠΡΑΓΜΑΤΙΚΟ Snort 3.12 (Kali)
-    |
-    +-- pcaps/
-    |     lab_traffic.pcap       το ενιαιο dataset κινησης
-    |
-    +-- screenshots/             στιγμιοτυπα εκτελεσης πραγματικου Snort (task 3)
-    +-- figures/                 fig1..fig5 (παραγονται απο το evaluation.py, για την αναφορα)
-    |
-    +-- Report_MTE25012_Hybrid_IDS.docx
-    +-- README.txt               αυτο το αρχειο
-    +-- TESTBED_DESIGN.md        τοπολογια, labeling, dataset (task 1)
-    +-- CASE_STUDIES.md          3 case studies διαφωνιας (task 6)
-    +-- SNORT_GUIDE.md           οδηγος εκτελεσης πραγματικου Snort σε Kali (screenshots)
-    +-- run_all.sh               τρεχει ολο το pipeline με τη σειρα
-    +-- requirements.txt         εξαρτησεις Python
+## Requirements
 
+Python 3.10+. Install dependencies:
 
-------------------------------------------------------------------------------
- 2. ΑΠΑΙΤΗΣΕΙΣ
+```bash
+pip install -r requirements.txt
+```
 
-Python 3.10+. Εγκατασταση εξαρτησεων:
+The ML pipeline runs **without** an installed Snort (it uses a faithful emulator).
+The real Snort is only needed to produce the alert screenshots and runs on Kali
+Linux with Snort 3, offline over the pcap (see `SNORT_GUIDE.md`).
 
-    pip install -r requirements.txt
+## How to run
 
-Το ML pipeline τρεχει ΧΩΡΙΣ εγκατεστημενο Snort (χρησιμοποιει τον emulator). Ο
-πραγματικος Snort χρειαζεται μονο για τα screenshots των alerts και τρεχει σε
-Kali Linux με Snort 3, offline στο pcap (πληρεις οδηγιες στο SNORT_GUIDE.md).
+Whole pipeline with one command (on Windows, run the steps individually with `python`):
 
+```bash
+bash run_all.sh
+```
 
-------------------------------------------------------------------------------
- 3. ΕΝΤΟΛΕΣ ΕΚΤΕΛΕΣΗΣ (με τη σειρα)
+Or step by step:
 
-Ολο το pipeline με μια εντολη (Windows: τρεξε τα βηματα ξεχωριστα με `python`):
+```bash
+python traffic_generation/build_dataset.py     # -> pcaps/lab_traffic.pcap, logs/event_log.csv
+python ml_detector/feature_extraction.py       # -> ml_detector/features.csv
+python ml_detector/snort_emulator.py           # -> logs/snort_alerts.csv, snort_windows.csv
+python ml_detector/train_model.py              # -> predictions.csv, ml_metrics.json, models
+python ml_detector/hybrid_fusion.py            # -> hybrid_results.csv, conflicts.json
+python ml_detector/evaluation.py               # -> figures/, evaluation.json
+```
 
-    bash run_all.sh
+Real Snort (offline, for the screenshots) on Kali Linux with Snort 3.12:
 
-Ή βημα-βημα:
+```bash
+sudo apt update && sudo apt install -y snort
+snort -c rules/snort_kali.lua -R rules/rules_kali.rules \
+      -r pcaps/lab_traffic.pcap -A alert_fast -l logs -k none
+```
 
-    python traffic_generation/build_dataset.py     -> pcaps/lab_traffic.pcap, logs/event_log.csv
-    python ml_detector/feature_extraction.py       -> ml_detector/features.csv
-    python ml_detector/snort_emulator.py           -> logs/snort_alerts.csv, snort_windows.csv
-    python ml_detector/train_model.py              -> predictions.csv, ml_metrics.json, μοντελα
-    python ml_detector/hybrid_fusion.py            -> hybrid_results.csv, conflicts.json
-    python ml_detector/evaluation.py               -> figures/, evaluation.json
+## What the system does (task by task)
 
-Πραγματικος Snort (offline, για screenshots) - σε Kali Linux με Snort 3.12:
+- **Task 1 - Testbed and threat model.** Two-network topology
+  (HOME_NET 10.0.0.0/24 with a victim HTTP server on port 8080, EXTERNAL_NET with an
+  attacker), an explicit threat model, and time-based ground truth. See `TESTBED_DESIGN.md`.
+- **Task 2 - Traffic generation and labeling.** Benign traffic plus six attack
+  families (SYN scan, ICMP flood, connection flood, HTTP probe, stealth web probe,
+  low-and-slow SQLi), aggregated into 1,484 one-second windows (~11.7% attack).
+- **Task 3 - Snort rules.** Five custom Snort 3 rules (suspicious URI, sqlmap
+  User-Agent, external ICMP flood, SYN scan, connection flood), verified with a faithful
+  emulator and with **real Snort 3.12.2 on Kali** (see `SNORT_GUIDE.md` and `screenshots/`).
+- **Task 4 - Features and ML models.** 17 per-window features and three models
+  (Random Forest, Logistic Regression, Isolation Forest) trained with a clean, stratified
+  70/30 held-out split (RF F1 = 0.916).
+- **Task 5 - Hybrid fusion.** A risk score (0.55·RF + 0.30·Snort + 0.15·IF), LOW/MEDIUM/HIGH
+  severity levels, and explicit conflict rules (signature override, anomaly watch, stealth).
+- **Task 6 - Evaluation.** Precision/recall/F1/FPR, confusion matrices, precision-recall
+  curves (emphasized due to class imbalance), an alert timeline, and three real
+  disagreement case studies. Hybrid F1 = 0.926, beating each single method. See `CASE_STUDIES.md`.
+- **Task 7 - Evasion and critical assessment.** Three evasion techniques, which detector
+  each fools, false-positive reduction, and honest limits against zero-day attacks.
 
-    sudo apt update && sudo apt install -y snort
-    snort -c rules/snort_kali.lua -R rules/rules_kali.rules \
-          -r pcaps/lab_traffic.pcap -A alert_fast -l logs -k none
+### Optional extensions
 
-    (πληρεις οδηγιες και επεξηγηση αποτελεσματων στο SNORT_GUIDE.md)
+- **Supervised vs unsupervised learning:** quantifies the precision/labeling trade-off
+  between RF/LogReg and Isolation Forest.
+- **Feedback loop:** automatically tunes the decision threshold to keep the false-positive
+  rate under a chosen budget (lands at 0.41, FPR 0.010, F1 0.923).
 
+## Key results (held-out test set)
 
-------------------------------------------------------------------------------
- 4. ΑΝΤΙΣΤΟΙΧΙΣΗ ΑΡΧΕΙΩΝ ΣΤΑ ΖΗΤΟΥΜΕΝΑ
+| Method | Precision | Recall | F1 | FPR |
+|---|---|---|---|---|
+| Snort-only | 1.000 | 0.346 | 0.514 | 0.000 |
+| ML-only (Random Forest) | 0.891 | 0.942 | 0.916 | 0.015 |
+| **Hybrid** | 0.893 | 0.962 | **0.926** | 0.015 |
 
-TASK 1 - Σχεδιασμος testbed & traffic plan: τοπολογια 2 δικτυων (HOME_NET/EXTERNAL_NET),
-    υπηρεσια-στοχος, σχεδιο κινησης, ground truth & labeling, αναπαραγωγιμοτητα.
-    Αρχεια: TESTBED_DESIGN.md, traffic_generation/build_dataset.py -> pcaps/lab_traffic.pcap,
-            logs/event_log.csv.
+The two layers are complementary: the ML layer catches 98 windows Snort misses
+(low-and-slow, scan onset), while Snort catches a stealth probe the ML layer reads
+as benign.
 
-TASK 2 - Παραγωγη & επισημανση κινησης: benign + 5 κακοβουλα σεναρια (SYN scan,
-    ICMP flood, connection flood, HTTP probe, stealth web) + 1 low-and-slow, με pcap
-    και label ανα παραθυρο (1.484 παραθυρα, labels απο timeline - χωρις leakage).
-    Αρχεια: traffic_generation/build_dataset.py, ml_detector/feature_extraction.py
-            -> features.csv.
+## Note on reproducibility
 
-TASK 3 - Snort με 5 custom κανονες (>3): HTTP suspicious URI, sqlmap UA, ICMP echo
-    απο external με threshold, SYN scan, connection flood.
-    Αρχεια: rules/local.rules, rules/snort.lua, ml_detector/snort_emulator.py
-            -> logs/snort_alerts.csv, logs/snort_windows.csv.
-    Επαληθευση με πραγματικο Snort 3.12 σε Kali: rules/snort_kali.lua, rules/rules_kali.rules
-            -> logs/alert_fast.txt, screenshots/. Οδηγος: SNORT_GUIDE.md.
-
-TASK 4 - Εξαγωγη 17 χαρακτηριστικων + εκπαιδευση ML με καθαρο held-out split (70/30,
-    stratified), scaler/IF μονο στο train, αναφορα preprocessing & hyperparameters.
-    Αρχεια: ml_detector/feature_extraction.py, ml_detector/train_model.py
-            -> predictions.csv, ml_metrics.json, rf_model.pkl, scaler.pkl, iforest.pkl.
-
-TASK 5 - Hybrid fusion: βαθμος κινδυνου (0.55*RF + 0.30*Snort + 0.15*IF), βαθμιδες
-    LOW/MEDIUM/HIGH, ρητος χειρισμος διαφωνιων (C1 signature override, C2 anomaly watch,
-    C3 stealth), συγκριση Snort-only / ML-only / Hybrid.
-    Αρχεια: ml_detector/hybrid_fusion.py -> hybrid_results.csv, conflicts.json.
-
-TASK 6 - Αξιολογηση: precision/recall/F1/FPR, confusion matrices, PR curves (εμφαση
-    λογω imbalance), ογκος alert, 3 case studies διαφωνιας, συζητηση ευσταθειας μετρικων.
-    Αρχεια: ml_detector/evaluation.py -> figures/fig1..fig5, evaluation.json;
-            CASE_STUDIES.md.
-
-TASK 7 - Evasion & reflection: >=3 τεχνικες evasion (κατατμηση/low-and-slow, stealth
-    χαμηλου ογκου, threshold evasion), ποιον ανιχνευτη επηρεαζουν, μειωση false
-    positives, ορια εναντι zero-day. Δινεται στην ενοτητα Task 7 της αναφορας.
-    Αρχεια: Report_MTE25012_Hybrid_IDS.docx.
-
-
-------------------------------------------------------------------------------
- 5. ΠΡΟΑΙΡΕΤΙΚΑ TASKS
-
-ΠΡΟΑΙΡΕΤΙΚΟ TASK 1 - Συγκριση δυο προσεγγισεων ML: supervised (Random Forest, Logistic
-    Regression) vs unsupervised anomaly detection (Isolation Forest), με τις αντισταθμισεις
-    τους (το IF εχει υψηλο recall αλλα χαμηλη precision - "το ασυνηθιστο δεν ειναι παντα
-    κακοβουλο").
-    Αρχεια: ml_detector/train_model.py, ml_detector/evaluation.py -> fig1, fig3.
-
-ΠΡΟΑΙΡΕΤΙΚΟ TASK 2 - Feedback loop: αυτοματη ρυθμιση του κατωφλιου του hybrid ωστε να
-    κρατιεται το FPR κατω απο ενα budget (auto-tuning απο τα μετρημενα false positives).
-    Αρχεια: ml_detector/evaluation.py -> fig5.
-
-
-------------------------------------------------------------------------------
- 6. ΤΕΚΜΗΡΙΩΣΗ
-
-Το Report (Report_MTE25012_Hybrid_IDS.docx) περιεχει την πληρη περιγραφη:
-testbed & μοντελο απειλων, σχεδιο & επισημανση κινησης, κανονες Snort, χαρακτηριστικα
-& μοντελα ML με πραγματικες μετρικες, hybrid fusion, αξιολογηση με πινακες/σχηματα,
-case studies, evasion & reflection, τα δυο προαιρετικα, και ρητη δηλωση οριων εγκυροτητας.
+Traffic synthesis and model training use a fixed random seed (1337), so every run
+produces identical results. All analysis is performed offline over a single pcap.
