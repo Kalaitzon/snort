@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Ioannis Kalaitzidis, MTE25012
-# Τρεχει ολο το pipeline με τη σειρα. Χρηση: bash run_all.sh
+
 set -e
 cd "$(dirname "$0")"
 echo "== 1. Dataset synthesis =="
