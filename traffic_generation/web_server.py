@@ -1,9 +1,8 @@
-# Ioannis Kalaitzidis, MTE25012
 
 """
-Απλος HTTP server-θυμα για το live mode (βλ. traffic_gen.py).
-Ακουει στο 0.0.0.0:8080 και εξυπηρετει ελαχιστο περιεχομενο. Χρησιμευει μονο
-ως στοχος οταν η κινηση παραγεται ζωντανα, δεν χρειαζεται για την offline αναλυση.
+Simple victim HTTP server for the live mode (see traffic_gen.py).
+It listens on 0.0.0.0:8080 and serves minimal content. It is only useful
+as a target when traffic is generated live; it is not needed for the offline analysis.
 """
 import http.server
 import socketserver
@@ -11,18 +10,18 @@ import socketserver
 PORT = 8080
 
 class H(http.server.BaseHTTPRequestHandler):
-    # Απανταει 200 OK με μια ελαχιστη σελιδα σε καθε GET
+    # Replies 200 OK with a minimal page on every GET
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.end_headers()
         self.wfile.write(b"<html><body>Lab victim server</body></html>")
 
-    def log_message(self, *a):   # σιωπηλο logging (καθαρη εξοδος)
+    def log_message(self, *a):   # silent logging (clean output)
         pass
 
 if __name__ == "__main__":
-    # TCPServer που εξυπηρετει επ' αοριστον μεχρι Ctrl+C
+    # TCPServer that serves indefinitely until Ctrl+C
     with socketserver.TCPServer(("", PORT), H) as httpd:
         print(f"[+] Victim server on http://0.0.0.0:{PORT}  (Ctrl+C to stop)")
         httpd.serve_forever()
