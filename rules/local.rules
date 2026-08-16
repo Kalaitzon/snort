@@ -1,17 +1,17 @@
 # =============================================================================
-# Custom Snort 3 rules - Ioannis Kalaitzidis, MTE25012
+# Custom Snort 3 rules
 #
 # HOME_NET     = 10.0.0.0/24   (server 10.0.0.10:8080, client 10.0.0.50)
 # EXTERNAL_NET = !HOME_NET      (attacker 192.168.56.20)
 #
-# Οι κανονες ειναι εγκυρη συνταξη Snort 3 και δοκιμαζονται offline απο τη ριζα
-# του project:
+# The rules are valid Snort 3 syntax and are tested offline from the project
+# root:
 #   snort -c rules/snort.lua -R rules/local.rules -r pcaps/lab_traffic.pcap -A alert_fast -l logs
 # =============================================================================
 
-# --- Rule 1: HTTP suspicious path / SQLi tooling (signature, χωρις threshold) ---
-# Πιανει ακομη και ΜΕΜΟΝΩΜΕΝΟ υποπτο αιτημα (content match), εκει που η ML
-# που βλεπει aggregate counts τυπικα αστοχει. Πηγη του "Snort-advantage" case.
+# --- Rule 1: HTTP suspicious path / SQLi tooling (signature, no threshold) ---
+# Catches even a SINGLE suspicious request (content match), where ML that sees
+# aggregate counts typically fails. Source of the "Snort-advantage" case.
 alert tcp $EXTERNAL_NET any -> $HOME_NET 8080 ( msg:"WEB Suspicious URI / admin panel probe";
     flow:to_server,established; content:"GET"; http_method;
     content:"phpmyadmin", nocase, http_uri; sid:1000001; rev:1;
@@ -21,21 +21,21 @@ alert tcp $EXTERNAL_NET any -> $HOME_NET 8080 ( msg:"WEB sqlmap User-Agent detec
     flow:to_server,established; content:"sqlmap", nocase, http_header;
     sid:1000002; rev:1; classtype:web-application-attack; )
 
-# --- Rule 2: ICMP echo request απο EXTERNAL_NET (recon), με flood threshold ---
-# Το threshold εξασφαλιζει οτι ενα μεμονωμενο νομιμο ping ΔΕΝ παραγει alert,
-# ενω το flood (πολλα echo/sec) ναι.
+# --- Rule 2: ICMP echo request from EXTERNAL_NET (recon), with flood threshold ---
+# The threshold ensures that a single legitimate ping does NOT produce an alert,
+# while a flood (many echo/sec) does.
 alert icmp $EXTERNAL_NET any -> $HOME_NET any ( msg:"ICMP Echo flood from external host";
     itype:8; icode:0; detection_filter:track by_src, count 30, seconds 1;
     sid:1000003; rev:1; classtype:misc-activity; )
 
 # --- Rule 3: TCP SYN scan (threshold by_src) ---
-# Fires οταν ενας source στελνει πολλα SYN στον server σε συντομο χρονο.
+# Fires when one source sends many SYNs to the server in a short time.
 alert tcp $EXTERNAL_NET any -> $HOME_NET 8080 ( msg:"TCP SYN scan / port sweep";
     flags:S; detection_filter:track by_src, count 40, seconds 2;
     sid:1000004; rev:1; classtype:attempted-recon; )
 
-# --- Rule 4 (extra, δικαιολογημενος): TCP connection flood (SYN burst) ---
-# Διαφορετικο threshold/σκοπος απο τον scan: εντοπιζει ριπη πληρων συνδεσεων.
+# --- Rule 4 (extra, justified): TCP connection flood (SYN burst) ---
+# Different threshold/purpose from the scan: detects a burst of full connections.
 alert tcp $EXTERNAL_NET any -> $HOME_NET 8080 ( msg:"TCP connection flood (burst)";
     flags:S; detection_filter:track by_src, count 20, seconds 1;
     sid:1000005; rev:1; classtype:attempted-dos; )
