@@ -1,29 +1,27 @@
-# Οδηγός εκτέλεσης Snort (offline) - για τα screenshots
+# Snort execution guide (offline) - for the screenshots
 
-Ιωάννης Καλαϊτζίδης, MTE25012
+The ML pipeline includes a faithful emulator of the rules (`ml_detector/snort_emulator.py`)
+so that it is fully reproducible without an installed Snort. The real Snort
+needs to run once, offline over the ready pcap, only to produce
+the alert screenshots that the assignment requires.
 
-Το ML pipeline περιλαμβάνει έναν πιστό emulator των κανόνων (`ml_detector/snort_emulator.py`)
-ώστε να είναι πλήρως αναπαραγώγιμο χωρίς εγκατεστημένο Snort. Ο πραγματικός Snort
-χρειάζεται να τρέξει μία φορά, offline πάνω στο έτοιμο pcap, μόνο για να παραχθούν
-τα στιγμιότυπα των alerts που ζητά η εκφώνηση.
+The verification was done on Kali Linux with Snort 3.12.2. Below are the exact
+commands that were used.
 
-Η επαλήθευση έγινε σε Kali Linux με Snort 3.12.2. Παρακάτω δίνονται οι ακριβείς
-εντολές που χρησιμοποιήθηκαν.
-
-## 1. Εγκατάσταση Snort 3 σε Kali Linux
+## 1. Installing Snort 3 on Kali Linux
 
 ```bash
 sudo apt update && sudo apt install -y snort
-snort --version    # επιβεβαιωση: Snort++ 3.x
+snort --version    # confirm: Snort++ 3.x
 ```
 
-## 2. Config και κανόνες συμβατοι με Snort 3.12
+## 2. Config and rules compatible with Snort 3.12
 
-Σε αυτή την εκδοση, οι μεταβλητες $HOME_NET / $EXTERNAL_NET οριζονται απευθειας
-μεσα στους κανονες. Χρησιμοποιουνται τα αρχεια `rules/snort_kali.lua` και
-`rules/rules_kali.rules` (περιλαμβανονται στο project).
+In this version, the $HOME_NET / $EXTERNAL_NET variables are defined directly
+inside the rules. The files `rules/snort_kali.lua` and
+`rules/rules_kali.rules` are used (included in the project).
 
-Περιεχομενο του `snort_kali.lua`:
+Content of `snort_kali.lua`:
 
 ```lua
 HOME_NET = '10.0.0.0/24'
@@ -37,7 +35,7 @@ ips = { enable_builtin_rules = false }
 alert_fast = { file = true }
 ```
 
-Περιεχομενο του `rules_kali.rules` (διευθυνσεις κατευθειαν, χωρις μεταβλητες):
+Content of `rules_kali.rules` (addresses inline, without variables):
 
 ```
 alert tcp !10.0.0.0/24 any -> 10.0.0.0/24 8080 ( msg:"WEB Suspicious URI / admin panel probe"; flow:to_server,established; http_uri; content:"phpmyadmin",nocase; sid:1000001; rev:1; )
@@ -47,29 +45,29 @@ alert tcp !10.0.0.0/24 any -> 10.0.0.0/24 8080 ( msg:"TCP SYN scan / port sweep"
 alert tcp !10.0.0.0/24 any -> 10.0.0.0/24 8080 ( msg:"TCP connection flood (burst)"; flags:S; detection_filter:track by_src, count 20, seconds 1; sid:1000005; rev:1; )
 ```
 
-## 3. Εκτέλεση offline στο pcap
+## 3. Offline execution over the pcap
 
-Απο τη ριζα του project:
+From the project root:
 
 ```bash
 snort -c rules/snort_kali.lua -R rules/rules_kali.rules \
       -r pcaps/lab_traffic.pcap -A alert_fast -l logs -k none
 ```
 
-Στο τελος τυπωνεται η συνοψη (Packet Statistics / Module Statistics). Χρησιμα σημεια:
-- `daq ... analyzed: 24110`  (αναλυθηκαν ολα τα πακετα)
-- `detection ... total_alerts: 1607`  (συνολικοι συναγερμοι)
+At the end the summary is printed (Packet Statistics / Module Statistics). Useful points:
+- `daq ... analyzed: 24110`  (all packets analyzed)
+- `detection ... total_alerts: 1607`  (total alerts)
 
-## 4. Έλεγχος των alerts
+## 4. Checking the alerts
 
 ```bash
 cat logs/alert_fast.txt | head -30
 for s in 1000001 1000002 1000003 1000004 1000005; do echo -n "$s: "; grep -c $s logs/alert_fast.txt; done
 ```
 
-Αποτελεσματα της εκτελεσης (Snort 3.12.2 σε Kali):
+Results of the run (Snort 3.12.2 on Kali):
 
-| sid | Κανόνας | Alerts |
+| sid | Rule | Alerts |
 |---|---|---|
 | 1000001 | WEB Suspicious URI (phpmyadmin) | 0 |
 | 1000002 | WEB sqlmap User-Agent | 0 |
@@ -77,9 +75,9 @@ for s in 1000001 1000002 1000003 1000004 1000005; do echo -n "$s: "; grep -c $s 
 | 1000004 | TCP SYN scan / port sweep | 73 |
 | 1000005 | TCP connection flood (burst) | 122 |
 
-Σημειωση: οι τρεις κανονες ογκου (ICMP/SYN/conn) ενεργοποιουνται κανονικα. Οι δυο
-κανονες περιεχομενου (phpmyadmin/sqlmap) δεν ενεργοποιηθηκαν σε αυτη την εκδοση,
-καθως ο http_inspect του Snort 3.12 δεν αντιστοιχιζει το συνθετικο HTTP payload με
-τον τροπο που το κανει ο emulator (ο οποιος τους πυροδοτει κανονικα). Οι μετρικες
-της μηχανικης μαθησης και του υβριδικου συστηματος βασιζονται στο πληρες συνολο
-κανονων μεσω του emulator και δεν επηρεαζονται.
+Note: the three volume rules (ICMP/SYN/conn) fire normally. The two
+content rules (phpmyadmin/sqlmap) did not fire in this version,
+because the http_inspect of Snort 3.12 does not match the synthetic HTTP payload the
+way the emulator does (which fires them normally). The metrics
+of the machine learning and of the hybrid system are based on the full set
+of rules through the emulator and are not affected.

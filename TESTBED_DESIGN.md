@@ -1,57 +1,55 @@
-# Σχεδιασμός Testbed - Hybrid IDS (Snort + ML)
+# Testbed Design - Hybrid IDS (Snort + ML)
 
-Ιωάννης Καλαϊτζίδης, MTE25012
+## 1. Topology
 
-## 1. Τοπολογία
-
-Το testbed χρησιμοποιεί δύο διακριτά δίκτυα, ώστε ο διαχωρισμός HOME_NET / EXTERNAL_NET
-να είναι ουσιαστικός (και όχι εικονικός όπως σε ένα σενάριο μόνο localhost, όπου ο
-κανόνας "ICMP από εκτός HOME_NET" δεν θα είχε νόημα).
+The testbed uses two distinct networks, so that the HOME_NET / EXTERNAL_NET
+separation is meaningful (and not artificial, as in a localhost-only scenario, where the
+rule "ICMP from outside HOME_NET" would make no sense).
 
 ```
         EXTERNAL_NET  (!10.0.0.0/24)                HOME_NET  (10.0.0.0/24)
   +--------------------------------+          +------------------------------+
-  |  attacker   192.168.56.20      |          |  server (θύμα) 10.0.0.10:8080 |
-  |  (SYN scan, ICMP flood,        | =======> |  client (νόμιμος) 10.0.0.50  |
+  |  attacker   192.168.56.20      |          |  server (victim) 10.0.0.10:8080 |
+  |  (SYN scan, ICMP flood,        | =======> |  client (legitimate) 10.0.0.50 |
   |   conn flood, HTTP probe,      |   Snort  |                              |
   |   stealth web, low-and-slow)   |   IDS    |  ext_client 203.0.113.7      |
   +--------------------------------+          +------------------------------+
-                                    Snort παρακολουθεί όλη την κίνηση
-                                    προς/από το HOME_NET (offline pcap)
+                                    Snort monitors all the traffic
+                                    to/from HOME_NET (offline pcap)
 ```
 
-- **HOME_NET** = `10.0.0.0/24`, περιέχει τον server-θύμα (`10.0.0.10:8080`) και έναν νόμιμο εσωτερικό πελάτη (`10.0.0.50`).
-- **EXTERNAL_NET** = `!10.0.0.0/24`, περιλαμβάνει τον επιτιθέμενο (`192.168.56.20`) και έναν νόμιμο εξωτερικό πελάτη (`203.0.113.7`).
-- **Υπηρεσία-στόχος**: HTTP server στη θύρα `8080`.
+- **HOME_NET** = `10.0.0.0/24`, contains the victim server (`10.0.0.10:8080`) and a legitimate internal client (`10.0.0.50`).
+- **EXTERNAL_NET** = `!10.0.0.0/24`, includes the attacker (`192.168.56.20`) and a legitimate external client (`203.0.113.7`).
+- **Target service**: HTTP server on port `8080`.
 
-## 2. Σημείο σύλληψης και μέθοδος
+## 2. Capture point and method
 
-Η ανάλυση γίνεται **offline** πάνω σε ένα ενιαίο pcap (`pcaps/lab_traffic.pcap`), το
-οποίο περιέχει όλη τη νόμιμη και κακόβουλη κίνηση με χρονοσφραγίδες. Ο Snort τρέχει σε
-λειτουργία ανάγνωσης pcap (`snort -r`), αποφεύγοντας τις χρονικές συνθήκες (race
-conditions) και τις εξαρτήσεις μιας ζωντανής σύλληψης. Το ίδιο pcap τροφοδοτεί και το
-ML pipeline, ώστε signature και anomaly ανίχνευση να αξιολογούνται στα ίδια ακριβώς δεδομένα.
+The analysis is done **offline** over a single pcap (`pcaps/lab_traffic.pcap`), which
+contains all the legitimate and malicious traffic with timestamps. Snort runs in
+pcap-read mode (`snort -r`), avoiding race conditions and the dependencies of a live
+capture. The same pcap also feeds the ML pipeline, so that signature and anomaly
+detection are evaluated on exactly the same data.
 
-## 3. Ground truth και επισήμανση (labeling)
+## 3. Ground truth and labeling
 
-Κρίσιμη σχεδιαστική αρχή (διάλεξη 4 - αποφυγή data leakage): το label κάθε χρονικού
-παραθύρου **δεν** προκύπτει από τα χαρακτηριστικά της κίνησης, αλλά από ανεξάρτητο
+Crucial design principle (lecture 4 - avoiding data leakage): the label of each time
+window does **not** derive from the traffic features, but from an independent
 ground truth:
 
-1. Κάθε επίθεση εκτελείται σε γνωστό χρονικό διάστημα, καταγεγραμμένο στο `logs/event_log.csv`.
-2. Ο επιτιθέμενος έχει γνωστή ταυτότητα (`192.168.56.20`).
-3. Ένα παράθυρο 1s χαρακτηρίζεται ως attack αν περιέχει έστω ένα πακέτο του επιτιθέμενου.
+1. Each attack runs in a known time interval, recorded in `logs/event_log.csv`.
+2. The attacker has a known identity (`192.168.56.20`).
+3. A 1s window is labeled as attack if it contains at least one packet from the attacker.
 
-Έτσι, τα labels είναι εντελώς ανεξάρτητα από τα aggregate features (packet_count,
-syn_count, κ.λπ.) που δίνονται στα μοντέλα, και αποφεύγεται η κυκλικότητα.
+This way, the labels are completely independent of the aggregate features (packet_count,
+syn_count, etc.) given to the models, and circularity is avoided.
 
-## 4. Σύνολο δεδομένων
+## 4. Dataset
 
-- Συνολικά πακέτα: 24.110 (TCP 22.456, ICMP 1.654), διάρκεια ~1.799s (~30 λεπτά).
-- Χρονικά παράθυρα (1s): 1.484, εκ των οποίων 174 attack και 1.310 benign (~11,7% ρεαλιστικό class imbalance).
-- Επεισόδια επιθέσεων (event_log): 18, σε 6 τύπους.
+- Total packets: 24,110 (TCP 22,456, ICMP 1,654), duration ~1,799s (~30 minutes).
+- Time windows (1s): 1,484, of which 174 attack and 1,310 benign (~11.7% realistic class imbalance).
+- Attack episodes (event_log): 18, across 6 types.
 
-| Τύπος επίθεσης | Επεισόδια | Attack windows |
+| Attack type | Episodes | Attack windows |
 |---|---|---|
 | SYN_SCAN | 4 | 8 |
 | ICMP_FLOOD | 3 | 12 |
@@ -60,20 +58,20 @@ syn_count, κ.λπ.) που δίνονται στα μοντέλα, και απ�
 | STEALTH_WEB | 2 | 38 |
 | SLOW_ATTACK | 2 | 89 |
 
-## 5. Αναπαραγωγιμότητα
+## 5. Reproducibility
 
-Ντετερμινιστική αναπαραγωγή (ίδιο pcap σε κάθε μηχάνημα):
+Deterministic reproduction (identical pcap on every machine):
 
 ```bash
 bash run_all.sh
 ```
 
-Ζωντανή αναπαραγωγή σε στημένο lab (προαιρετικά, για επιβεβαίωση της μεθόδου):
+Live reproduction in a set-up lab (optional, to confirm the method):
 
 ```bash
-# server (θύμα)
+# server (victim)
 python traffic_generation/web_server.py
-# Snort σε live capture (ή offline στο pcap, βλ. SNORT_GUIDE.md)
-# επιτιθέμενος
+# Snort in live capture (or offline over the pcap, see SNORT_GUIDE.md)
+# attacker
 sudo python traffic_generation/traffic_gen.py
 ```
