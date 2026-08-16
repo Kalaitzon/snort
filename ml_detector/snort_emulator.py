@@ -1,21 +1,19 @@
-# Ioannis Kalaitzidis, MTE25012
-
 """
-Πιστος emulator των κανονων Snort (rules/local.rules) πανω στο pcap.
+Faithful emulator of the Snort rules (rules/local.rules) over the pcap.
 
-Σκοπος: να παραγει το ιδιο σημα ανιχνευσης που θα εδινε ο πραγματικος Snort 3,
-ωστε το hybrid pipeline να ειναι πληρως αναπαραγωγιμο ΧΩΡΙΣ να απαιτειται
-εγκατεστημενος Snort. Ο πραγματικος Snort τρεχει ξεχωριστα, offline, μονο για
-τα screenshots (βλ. README, ΒΗΜΑ Snort) και τα alerts του συμφωνουν με αυτα εδω.
+Purpose: to produce the same detection signal that the real Snort 3 would give,
+so that the hybrid pipeline is fully reproducible WITHOUT requiring an installed
+Snort. The real Snort runs separately, offline, only for the screenshots
+(see README, Snort STEP) and its alerts agree with the ones here.
 
-Η λογικη καθε κανονα αντιγραφει ΑΚΡΙΒΩΣ τα thresholds του local.rules:
-  sid 1000001/1000002 : content match (phpmyadmin URI / sqlmap UA) - χωρις threshold
-  sid 1000003 : ICMP echo απο external, detection_filter count 30 / 1s by_src
+The logic of each rule copies EXACTLY the thresholds of local.rules:
+  sid 1000001/1000002 : content match (phpmyadmin URI / sqlmap UA) - no threshold
+  sid 1000003 : ICMP echo from external, detection_filter count 30 / 1s by_src
   sid 1000004 : TCP SYN, detection_filter count 40 / 2s by_src
   sid 1000005 : TCP SYN, detection_filter count 20 / 1s by_src (connection flood)
 
-Παραγει:
-  logs/snort_alerts.csv   : ενα alert ανα γραμμη (rel_time, sid, msg, src)
+Produces:
+  logs/snort_alerts.csv   : one alert per line (rel_time, sid, msg, src)
   logs/snort_windows.csv  : window_id, snort_detection, sids_fired
 """
 
@@ -24,12 +22,12 @@ import csv
 from collections import defaultdict, deque
 from scapy.all import rdpcap, IP, TCP, ICMP, Raw
 
-# Διαδρομες σχετικες με τη ριζα του project (φορητες, ανεξαρτητα απο το cwd)
+# Paths relative to the project root (portable, independent of the cwd)
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PCAP = os.path.join(BASE, "pcaps", "lab_traffic.pcap")
 ALERTS_OUT = os.path.join(BASE, "logs", "snort_alerts.csv")
 WINDOWS_OUT = os.path.join(BASE, "logs", "snort_windows.csv")
-os.makedirs(os.path.join(BASE, "logs"), exist_ok=True)   # δημιουργια logs/ αν λειπει
+os.makedirs(os.path.join(BASE, "logs"), exist_ok=True)   # create logs/ if missing
 
 HOME_PREFIX = "10.0.0."
 WINDOW = 1.0
@@ -41,7 +39,7 @@ def is_external(ip):
     return not is_home(ip)
 
 def within(dq, t, seconds):
-    """Κραταει στη deque μονο timestamps εντος [t-seconds, t] και επιστρεφει το πληθος."""
+    """Keeps in the deque only timestamps within [t-seconds, t] and returns the count."""
     while dq and dq[0] < t - seconds:
         dq.popleft()
     return len(dq)
@@ -86,7 +84,7 @@ def main():
         # --- TCP SYN scan / connection flood (external -> home:8080) ---
         if p.haslayer(TCP) and is_external(src) and is_home(dst) and int(p[TCP].dport) == 8080:
             fl = int(p[TCP].flags)
-            if (fl & 0x02) and not (fl & 0x10):   # SYN χωρις ACK
+            if (fl & 0x02) and not (fl & 0x10):   # SYN without ACK
                 d4 = syn40[src]; d4.append(rel)
                 if within(d4, rel, 2.0) >= 40:
                     alerts.append((rel, 1000004, "TCP SYN scan / port sweep", src))
@@ -96,7 +94,7 @@ def main():
                     alerts.append((rel, 1000005, "TCP connection flood (burst)", src))
                     win_sids[wid].add(1000005)
 
-    # Εγγραφη alerts
+    # Write alerts
     with open(ALERTS_OUT, "w", newline="") as f:
         w = csv.writer(f); w.writerow(["rel_time", "sid", "msg", "src"])
         for a in alerts:
@@ -110,7 +108,7 @@ def main():
             sids = win_sids.get(wid, set())
             w.writerow([wid, 1 if sids else 0, "|".join(str(s) for s in sorted(sids))])
 
-    # Συνοψη ανα sid
+    # Summary per sid
     from collections import Counter
     by_sid = Counter(a[1] for a in alerts)
     print(f"[OK] alerts: {len(alerts)} -> {ALERTS_OUT}")

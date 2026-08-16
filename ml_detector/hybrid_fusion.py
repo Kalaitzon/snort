@@ -1,34 +1,32 @@
-# Ioannis Kalaitzidis, MTE25012
-
 """
-Hybrid fusion: συνδυασμος signature-based (Snort) και anomaly/supervised (ML).
+Hybrid fusion: combination of signature-based (Snort) and anomaly/supervised (ML).
 
-Σηματα εισοδου ανα παραθυρο:
-  - snort_detection : 1 αν πυροδοτηθηκε καποιος κανονας Snort (signature)
-  - rf_score        : πιθανοτητα επιθεσης απο Random Forest (supervised)
-  - if_score        : κανονικοποιημενο anomaly score απο Isolation Forest
+Input signals per window:
+  - snort_detection : 1 if some Snort rule fired (signature)
+  - rf_score        : attack probability from Random Forest (supervised)
+  - if_score        : normalized anomaly score from Isolation Forest
 
-Βαθμολογια κινδυνου (risk score) και επιπεδα:
+Risk score and levels:
   risk = 0.55*rf_score + 0.30*snort_detection + 0.15*if_score
   LOW    : risk < 0.40
   MEDIUM : 0.40 <= risk < 0.70
   HIGH   : risk >= 0.70
-  Τελικη αποφαση hybrid = alert αν risk >= 0.40 (>= MEDIUM).
+  Final hybrid decision = alert if risk >= 0.40 (>= MEDIUM).
 
-Ρητος χειρισμος διαφωνιων (conflict handling):
-  C1 signature override : αν Snort=1 αλλα το ML ειναι χαμηλο, το matched signature
-       ειναι ντετερμινιστικο IOC -> ανεβαζουμε το risk σε τουλαχιστον 0.70 (HIGH).
-  C2 anomaly-only watch : αν Snort=0 ΚΑΙ RF=0 αλλα το IF ειναι πολυ ανωμαλο
-       (if_score>0.85), σημανε τουλαχιστον MEDIUM watch (χαμηλοτερη βεβαιοτητα).
-  C3 stealth (ML-driven): αν RF=1 αλλα Snort=0, εμπιστευσου το ML - εδω πιανεται
-       το low-and-slow που ο Snort ειναι τυφλος (content split, κατω απο thresholds).
+Explicit conflict handling:
+  C1 signature override : if Snort=1 but the ML is low, the matched signature
+       is a deterministic IOC -> we raise risk to at least 0.70 (HIGH).
+  C2 anomaly-only watch : if Snort=0 AND RF=0 but IF is very anomalous
+       (if_score>0.85), signal at least a MEDIUM watch (lower certainty).
+  C3 stealth (ML-driven): if RF=1 but Snort=0, trust the ML - this is where
+       the low-and-slow is caught, where Snort is blind (content split, below thresholds).
 """
 
 import os
 import json
 import pandas as pd
 
-# Διαδρομες σχετικες με τη ριζα του project (φορητες, ανεξαρτητα απο το cwd)
+# Paths relative to the project root (portable, independent of the cwd)
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRED = os.path.join(BASE, "ml_detector", "predictions.csv")
 SNORT_WIN = os.path.join(BASE, "logs", "snort_windows.csv")
@@ -61,18 +59,18 @@ def main():
     df.loc[df["risk_score"] >= T_MED, "risk_level"] = "MEDIUM"
     df.loc[df["risk_score"] >= T_HIGH, "risk_level"] = "HIGH"
 
-    # Αποφασεις ανα μεθοδο (για συγκριση)
+    # Decisions per method (for comparison)
     df["snort_only"] = df["snort_detection"]
     df["ml_only"] = df["rf_pred"]
-    # Δυαδικη αποφαση hybrid = ενωση των δυο high-precision detectors (signature OR
-    # supervised): ο καθενας καλυπτει το τυφλο σημειο του αλλου. Το Isolation Forest
-    # δεν κανει auto-alert (θα ριχνε την precision) - συνεισφερει μονο στη βαθμιδα
-    # σοβαροτητας (risk_level) ως "anomaly watch".
+    # Binary hybrid decision = union of the two high-precision detectors (signature OR
+    # supervised): each covers the other's blind spot. Isolation Forest does not
+    # auto-alert (it would hurt precision) - it only contributes to the severity
+    # level (risk_level) as an "anomaly watch".
     df["hybrid"] = ((df["snort_detection"] == 1) | (df["rf_pred"] == 1)).astype(int)
 
     df.to_csv(OUT, index=False)
 
-    # Καταγραφη περιπτωσεων διαφωνιας (για case studies / συζητηση)
+    # Record the disagreement cases (for case studies / discussion)
     conflicts = {
         "snort_catches_ml_misses": int(((df.snort_only == 1) & (df.ml_only == 0) & (df.is_attack == 1)).sum()),
         "ml_catches_snort_misses": int(((df.ml_only == 1) & (df.snort_only == 0) & (df.is_attack == 1)).sum()),
